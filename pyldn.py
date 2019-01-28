@@ -135,7 +135,7 @@ def post_inbox():
     resp = make_response()
 
     ldn_uuid = uuid.uuid4().hex 
-    ldn_url = pyldnconf._inbox_url + ldn_uuid
+    ldn_url = pyldnconf._inbox_url + "/" + ldn_uuid
     graphs[ldn_url] = g = Graph()
     try:
         g.parse(data=request.data, format=content_type[0])
@@ -147,8 +147,8 @@ def post_inbox():
     if esip_cor:
         #First update the Inbox graph with the new LDN IRI
         inbox_body = swagger_client.PutOnt()
-        inbox_body.iri = iri
-        inbox_body.name = 'ESIP Linked Data Notifications'
+        inbox_body.iri = iri.strip("/")
+        inbox_body.name = 'ESIP Linked Data Notificaions Inbox Graph'
         inbox_body.visibility = 'public'
         inbox_body.status = 'testing'
         #body.metadata = ''
@@ -157,6 +157,7 @@ def post_inbox():
         inbox_body.uploaded_filename = 'inbox.ttl'
         inbox_body.contents = inbox_graph.serialize(format=request.headers['Content-Type']).decode("utf-8")
         inbox_body.format = request.headers['Content-Type']
+        print(inbox_body)
         try:
             # Registers a brand new ontology
             ont_instance.update_ont(body=inbox_body)
