@@ -28,7 +28,9 @@ esip_cor = False
 # Accepted content types
 ACCEPTED_TYPES = ['application/ld+json',
                   'text/turtle',
-                  'application/ld+json; profile="http://www.w3.org/ns/activitystreams', 'turtle', 'json-ld']
+                  'application/ld+json; profile="http://www.w3.org/ns/activitystreams', 
+                  'turtle', 
+                  'json-ld']
 
 # Graph of the local inbox
 ldp_url = URIRef("http://www.w3.org/ns/ldp#")
@@ -43,11 +45,12 @@ if pyldnconf._storage == 'esip_cor':
     app.logger.info("Establishing swagger_client configuration for ESIP COR.")
     esip_cor = True
     # Configure HTTP basic authorization: basicAuth
-    swagger_client.configuration.username = pyldnconf._cor_user
-    swagger_client.configuration.password = pyldnconf._cor_pass
+    configuration = swagger_client.Configuration()
+    configuration.username = pyldnconf._cor_user
+    configuration.password = pyldnconf._cor_pass
     # create an instance of the add_ont API
     # https://github.com/ESIPFed/corpy/blob/master/docs/OntologyApi.md#add_ont
-    ont_instance = swagger_client.OntologyApi()
+    ont_instance = swagger_client.OntologyApi(swagger_client.ApiClient(configuration))
     # create an instance of the term_get API
     # https://github.com/ESIPFed/corpy/blob/master/docs/TermApi.md#term_get
     #term_instance = swagger_client.TermApi()
@@ -145,18 +148,24 @@ def post_inbox():
     inbox_graph.add((URIRef(pyldnconf._inbox_url), ldp['contains'], URIRef(ldn_url)))
     app.logger.info('Created notification {}'.format(ldn_url))
     if esip_cor:
-        #First update the Inbox graph with the new LDN IRI
+        #First update the Inbox graph with the new LDN IRI. This involves three steps.
+        # 1. Get existing LDN Graph from COR,
+        # 2. Merge new LDN into existing graph and PUT
+        # 3. POST the new LDN separately to COR
+
+        # 1. Get existing LDN Graph from COR
+
+
+        # 2. Merge new LDN into existing graph and PUT
         inbox_body = swagger_client.PutOnt()
         inbox_body.iri = iri.strip("/")
         inbox_body.name = 'ESIP Linked Data Notificaions Inbox Graph'
         inbox_body.visibility = 'public'
         inbox_body.status = 'testing'
-        #body.metadata = ''
-        inbox_body.org_name = pyldnconf._cor_org
-        inbox_body.user_name = pyldnconf._cor_user
         inbox_body.uploaded_filename = 'inbox.ttl'
-        inbox_body.contents = inbox_graph.serialize(format=request.headers['Content-Type']).decode("utf-8")
-        inbox_body.format = request.headers['Content-Type']
+        inbox_body.contents = inbox_graph.serialize(format=content_type[0]).decode("utf-8")
+        inbox_body.format = get_simple_mime_type(content_type[0])
+        inbox_body.user_name = pyldnconf._cor_user
         print(inbox_body)
         try:
             # Registers a brand new ontology
@@ -164,7 +173,7 @@ def post_inbox():
         except ApiException as e:
             app.logger.error("Exception when calling OntologyApi->update_ont: %s\n" % e)
 
-        #Then add the content of the new LDN.
+        # 3. POST the new LDN separately to COR
         ldn_body = swagger_client.PostOnt()
         ldn_body.iri = iri + "/" + ldn_uuid
         ldn_body.original_iri = iri + "/" + ldn_uuid
@@ -174,7 +183,7 @@ def post_inbox():
         ldn_body.status = 'testing'
         ldn_body.user_name = pyldnconf._cor_user
         ldn_body.contents = request.data.decode("utf-8")
-        ldn_body.format = request.headers['Content-Type']
+        ldn_body.format = get_simple_mime_type(content_type[0])
         try: 
             # Registers a brand new ontology
             ont_instance.add_ont(ldn_body)
@@ -208,6 +217,14 @@ def get_notification(id):
     resp.headers['Allow'] = "GET"
 
     return resp
+
+def get_simple_mime_type(mime):
+    if mime == 'application/ld+json' or 'application/ld+json; profile="http://www.w3.org/ns/activitystreams' or 'json-ld':
+        mime = 'jsonld'
+    elif mime == 'text/turtle' or 'turtle':
+        mime == 'ttl'
+
+    return mime
 
 if __name__ == '__main__':
     logHandler = RotatingFileHandler('pyldn.log', maxBytes=1000, backupCount=1)

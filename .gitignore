@@ -90,3 +90,6 @@ ENV/
 
 include/
 *.json
+
+# Ignore logs
+*.log*
