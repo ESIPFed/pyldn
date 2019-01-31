@@ -48,9 +48,8 @@ if pyldnconf._storage == 'esip_cor':
     configuration = swagger_client.Configuration()
     configuration.username = pyldnconf._cor_user
     configuration.password = pyldnconf._cor_pass
-    # create an instance of the add_ont API
-    # https://github.com/ESIPFed/corpy/blob/master/docs/OntologyApi.md#add_ont
-    ont_instance = swagger_client.OntologyApi(swagger_client.ApiClient(configuration))
+    api_client = swagger_client.ApiClient(configuration)
+    ont_instance = swagger_client.OntologyApi(api_client)
     # create an instance of the term_get API
     # https://github.com/ESIPFed/corpy/blob/master/docs/TermApi.md#term_get
     #term_instance = swagger_client.TermApi()
@@ -149,26 +148,31 @@ def post_inbox():
     app.logger.info('Created notification {}'.format(ldn_url))
     if esip_cor:
         #First update the Inbox graph with the new LDN IRI. This involves three steps.
-        # 1. Get existing LDN Graph from COR,
+        # 1. Get existing LDN Inbox Graph from COR,
         # 2. Merge new LDN into existing graph and PUT
         # 3. POST the new LDN separately to COR
 
+        format = get_simple_format(content_type[0])
+
         # 1. Get existing LDN Graph from COR
+        api_call = ("http://cor.esipfed.org/ont/api/v0/ont?format=%s&iri=%s" % ('ttl', iri))
+        existing_graph = Graph()
+        existing_graph.parse(api_call)
 
+        # 2. Merge new LDN into existing graph and PUT        
+        merged_graph = existing_graph + inbox_graph
 
-        # 2. Merge new LDN into existing graph and PUT
         inbox_body = swagger_client.PutOnt()
         inbox_body.iri = iri.strip("/")
         inbox_body.name = 'ESIP Linked Data Notificaions Inbox Graph'
         inbox_body.visibility = 'public'
         inbox_body.status = 'testing'
         inbox_body.uploaded_filename = 'inbox.ttl'
-        inbox_body.contents = inbox_graph.serialize(format=content_type[0]).decode("utf-8")
-        inbox_body.format = get_simple_mime_type(content_type[0])
+        inbox_body.contents = merged_graph.serialize(format=content_type[0]).decode("utf-8")
+        inbox_body.format = format
         inbox_body.user_name = pyldnconf._cor_user
-        print(inbox_body)
         try:
-            # Registers a brand new ontology
+            print(merged_graph.serialize(format=content_type[0]).decode("utf-8"))
             ont_instance.update_ont(body=inbox_body)
         except ApiException as e:
             app.logger.error("Exception when calling OntologyApi->update_ont: %s\n" % e)
@@ -183,10 +187,11 @@ def post_inbox():
         ldn_body.status = 'testing'
         ldn_body.user_name = pyldnconf._cor_user
         ldn_body.contents = request.data.decode("utf-8")
-        ldn_body.format = get_simple_mime_type(content_type[0])
+        ldn_body.format = format
         try: 
             # Registers a brand new ontology
             ont_instance.add_ont(ldn_body)
+            print('PostOnt')
         except ApiException as e:
             app.logger.error("Exception when calling OntologyApi->add_ont: %s\n" % e)
 
@@ -218,7 +223,7 @@ def get_notification(id):
 
     return resp
 
-def get_simple_mime_type(mime):
+def get_simple_format(mime):
     if mime == 'application/ld+json' or 'application/ld+json; profile="http://www.w3.org/ns/activitystreams' or 'json-ld':
         mime = 'jsonld'
     elif mime == 'text/turtle' or 'turtle':
