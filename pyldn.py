@@ -44,15 +44,11 @@ iri = 'http://cor.esipfed.org/ont/ldn/inbox'
 if pyldnconf._storage == 'esip_cor':
     app.logger.info("Establishing swagger_client configuration for ESIP COR.")
     esip_cor = True
-    # Configure HTTP basic authorization: basicAuth
     configuration = swagger_client.Configuration()
     configuration.username = pyldnconf._cor_user
     configuration.password = pyldnconf._cor_pass
     api_client = swagger_client.ApiClient(configuration)
     ont_instance = swagger_client.OntologyApi(api_client)
-    # create an instance of the term_get API
-    # https://github.com/ESIPFed/corpy/blob/master/docs/TermApi.md#term_get
-    #term_instance = swagger_client.TermApi()
 
 inbox_graph.add((URIRef(pyldnconf._inbox_url), RDF.type, ldp['Resource']))
 inbox_graph.add((URIRef(pyldnconf._inbox_url), RDF.type, ldp['RDFSource']))
@@ -88,26 +84,23 @@ def get_inbox():
     app.logger.info("Requested inbox data of {} in {}".format(request.url, request.headers['Accept']))
     if not request.headers['Accept'] or request.headers['Accept'] == '*/*' or 'text/html' in request.headers['Accept']:
         if esip_cor:
-            try: 
-                # Gets information about registered ontologies or terms
-                api_response = ont_instance.ont_get(iri=iri, format='application/ld+json')
-                print(api_response)
-            except ApiException as e:
-                print("Exception when calling OntologyApi->ont_get: %s\n" % e)
-            resp = make_response(inbox_graph.serialize(format='application/ld+json'))
+            format = get_simple_format(content_type[0])
+
+            # Get existing LDN Inbox Graph from COR
+            api_call = ("http://cor.esipfed.org/ont/api/v0/ont?format=%s&iri=%s" % ('ttl', iri))
+            existing_graph = Graph()
+            existing_graph.parse(api_call)
+            resp = make_response(existing_graph.serialize(format='application/ld+json'))
             resp.headers['Content-Type'] = 'application/ld+json'
         else:
             resp = make_response(inbox_graph.serialize(format='application/ld+json'))
             resp.headers['Content-Type'] = 'application/ld+json'
     elif request.headers['Accept'] in ACCEPTED_TYPES:
         if esip_cor:
-            try: 
-                # Gets information about registered ontologies or terms
-                api_response = ont_instance.ont_get(iri='/ldn/', format=request.headers['Accept'])
-                app.logger.info(api_response)
-            except ApiException as e:
-                app.logger.error("Exception when calling OntologyApi->ont_get: %s\n" % e)
-            resp = make_response(inbox_graph.serialize(format=request.headers['Accept']))
+            api_call = ("http://cor.esipfed.org/ont/api/v0/ont?format=%s&iri=%s" % ('ttl', iri))
+            existing_graph = Graph()
+            existing_graph.parse(api_call)
+            resp = make_response(existing_graph.serialize(format=request.headers['Accept']))
             resp.headers['Content-Type'] = request.headers['Accept']
         else:
             resp = make_response(inbox_graph.serialize(format=request.headers['Accept']))
@@ -137,7 +130,7 @@ def post_inbox():
     resp = make_response()
 
     ldn_uuid = uuid.uuid4().hex 
-    ldn_url = pyldnconf._inbox_url + "/" + ldn_uuid
+    ldn_url = pyldnconf._inbox_url + ldn_uuid
     graphs[ldn_url] = g = Graph()
     try:
         g.parse(data=request.data, format=content_type[0])
@@ -154,7 +147,7 @@ def post_inbox():
 
         format = get_simple_format(content_type[0])
 
-        # 1. Get existing LDN Graph from COR
+        # 1. Get existing LDN Inbox Graph from COR
         api_call = ("http://cor.esipfed.org/ont/api/v0/ont?format=%s&iri=%s" % ('ttl', iri))
         existing_graph = Graph()
         existing_graph.parse(api_call)
@@ -164,15 +157,14 @@ def post_inbox():
 
         inbox_body = swagger_client.PutOnt()
         inbox_body.iri = iri.strip("/")
-        inbox_body.name = 'ESIP Linked Data Notificaions Inbox Graph'
+        inbox_body.name = 'ESIP Linked Data Notifications Inbox Graph'
         inbox_body.visibility = 'public'
-        inbox_body.status = 'testing'
+        inbox_body.status = 'stable'
         inbox_body.uploaded_filename = 'inbox.ttl'
         inbox_body.contents = merged_graph.serialize(format=content_type[0]).decode("utf-8")
         inbox_body.format = format
         inbox_body.user_name = pyldnconf._cor_user
         try:
-            print(merged_graph.serialize(format=content_type[0]).decode("utf-8"))
             ont_instance.update_ont(body=inbox_body)
         except ApiException as e:
             app.logger.error("Exception when calling OntologyApi->update_ont: %s\n" % e)
@@ -184,14 +176,13 @@ def post_inbox():
         ldn_body.name = 'ESIP Linked Data Notification: ' + ldn_uuid
         ldn_body.org_name = pyldnconf._cor_org
         ldn_body.visibility = 'public'
-        ldn_body.status = 'testing'
+        ldn_body.status = 'stable'
         ldn_body.user_name = pyldnconf._cor_user
         ldn_body.contents = request.data.decode("utf-8")
         ldn_body.format = format
         try: 
             # Registers a brand new ontology
             ont_instance.add_ont(ldn_body)
-            print('PostOnt')
         except ApiException as e:
             app.logger.error("Exception when calling OntologyApi->add_ont: %s\n" % e)
 
@@ -206,15 +197,36 @@ def get_notification(id):
 
     # Check if the named graph exists
     app.logger.info("Dict key is {}".format(pyldnconf._inbox_url + id))
-    if pyldnconf._inbox_url + id not in graphs:
-        return 'Requested notification does not exist', 404
+    if esip_cor:
+        # 1. Get existing LDN from COR
+        ldn = iri + "/" + id
+        print(ldn)
+        try:
+            api_call = ("http://cor.esipfed.org/ont/api/v0/ont?format=%s&iri=%s" % ('ttl', ldn))
+        except Excepttion as e:
+            app.logger.error('Exception retrieving notification %s from ESIP Linked Data Notifications Inbox Graph. Named graph absent!' % ldn)
+            return 'Requested notification does not exist', 404
+        if api_call is not None:
+            named_graph = Graph()
+            named_graph.parse(api_call)            
+    else:
+        if pyldnconf._inbox_url + id not in graphs:
+            return 'Requested notification does not exist', 404
 
     if 'Accept' not in request.headers or request.headers['Accept'] == '*/*' or 'text/html' in request.headers['Accept']:
-        resp = make_response(graphs[pyldnconf._inbox_url + id].serialize(format='application/ld+json'))
-        resp.headers['Content-Type'] = 'application/ld+json'
+        if esip_cor:
+            resp = make_response(named_graph.serialize(format='application/ld+json'))
+            resp.headers['Content-Type'] = 'application/ld+json'
+        else:
+            resp = make_response(graphs[pyldnconf._inbox_url + id].serialize(format='application/ld+json'))
+            resp.headers['Content-Type'] = 'application/ld+json'
     elif request.headers['Accept'] in ACCEPTED_TYPES:
-        resp = make_response(graphs[pyldnconf._inbox_url + id].serialize(format=request.headers['Accept']))
-        resp.headers['Content-Type'] = request.headers['Accept']
+        if esip_cor:
+            resp = make_response(named_graph.serialize(format=request.headers['Accept']))
+            resp.headers['Content-Type'] = request.headers['Accept']
+        else:
+            resp = make_response(graphs[pyldnconf._inbox_url + id].serialize(format=request.headers['Accept']))
+            resp.headers['Content-Type'] = request.headers['Accept']
     else:
         return 'Requested format unavailable', 415
 

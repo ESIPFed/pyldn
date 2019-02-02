@@ -34,8 +34,7 @@ class Pyldnconfig(object):
 
         # port_str = ":" + str(self._port) if self._port != 80 else ""
         # self._inbox_url = self._base_path + port_str + self._inbox_path
-        #self._inbox_url = self._base_path + self._inbox_path
-        self._inbox_url = 'http://cor.esipfed.org/ont/ldn/inbox'
+        self._inbox_url = self._base_path + self._inbox_path
 
     def log_config(self):
         clog.info('Current pyldn configuration')
