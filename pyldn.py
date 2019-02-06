@@ -130,7 +130,7 @@ def post_inbox():
     resp = make_response()
 
     ldn_uuid = uuid.uuid4().hex 
-    ldn_url = pyldnconf._inbox_url + ldn_uuid
+    ldn_url = iri + "/" + ldn_uuid
     graphs[ldn_url] = g = Graph()
     try:
         g.parse(data=request.data, format=content_type[0])
