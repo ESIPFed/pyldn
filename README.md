@@ -44,7 +44,7 @@ Date: Thu, 31 Jan 2019 23:07:14 GMT
 You can request a list of the notification URLs it contains:
 
 <pre>
-curl -X GET -H'Accept: text/turtle' http://cor.esipfed.org/ldn/inbox
+curl -X GET -H'Accept: text/turtle' http://cor.esipfed.org/ldn/inbox/
 
 HTTP/1.1 200 OK
 
